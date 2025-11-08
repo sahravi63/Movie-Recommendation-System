@@ -246,58 +246,81 @@ AGE_RATING_MAP = {
 
 import requests, pickle, pandas as pd, os
 
+
 @st.cache_data
 def load_data():
-    # ✅ Direct Dropbox links (no tokens, no ?dl=0)
-    MOVIE_DICT_URL = "https://dl.dropboxusercontent.com/scl/fi/kgrn1642a53ci1two9zc3/movie_dict.pkl"
-    SIMILARITY_URL = "https://dl.dropboxusercontent.com/scl/fi/zhalvy3t6bgadt4ea1o3z/similarity.pkl"
+    # ✅ File IDs (yours are correct)
+    MOVIE_DICT_ID = "1sr4EqcWE1_47fQvLplLJ0rY6oAdeZQ8m"
+    SIMILARITY_ID = "1FORuqkvy18EJZ64IR1NgtUyYRy_Z_rGj"
 
-    def download_from_url(url, destination):
-        """Download binary file directly (Dropbox raw URL)."""
-        response = requests.get(url, stream=True)
-        if response.status_code != 200:
-            st.error(f"❌ Failed to download {os.path.basename(destination)} (HTTP {response.status_code})")
-            st.stop()
+    # --------------------------
+    # Helper: Download from Drive
+    # --------------------------
+    def download_from_gdrive(file_id, destination):
+        """Handles large Google Drive files (with confirmation token)."""
+        URL = "https://drive.google.com/uc?export=download"
+        session = requests.Session()
 
+        response = session.get(URL, params={'id': file_id}, stream=True)
+        token = get_confirm_token(response)
+
+        if token:  # Large file confirmation page
+            params = {'id': file_id, 'confirm': token}
+            response = session.get(URL, params=params, stream=True)
+
+        save_response_content(response, destination)
+
+    def get_confirm_token(response):
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                return value
+        return None
+
+    def save_response_content(response, destination, chunk_size=32768):
         with open(destination, "wb") as f:
-            for chunk in response.iter_content(8192):
+            for chunk in response.iter_content(chunk_size):
                 if chunk:
                     f.write(chunk)
 
-    # Download files only once
+    # --------------------------
+    # Download and verify files
+    # --------------------------
     if not os.path.exists("movie_dict.pkl"):
-        st.info("📥 Downloading movie_dict.pkl from Dropbox...")
-        download_from_url(MOVIE_DICT_URL, "movie_dict.pkl")
+        st.info("📥 Downloading movie_dict.pkl from Google Drive...")
+        download_from_gdrive(MOVIE_DICT_ID, "movie_dict.pkl")
 
     if not os.path.exists("similarity.pkl"):
-        st.info("📥 Downloading similarity.pkl from Dropbox...")
-        download_from_url(SIMILARITY_URL, "similarity.pkl")
+        st.info("📥 Downloading similarity.pkl from Google Drive...")
+        download_from_gdrive(SIMILARITY_ID, "similarity.pkl")
 
-    # Validate file contents (ensure not HTML)
+    # --------------------------
+    # Validate file content
+    # --------------------------
     def validate_pickle(path):
         with open(path, "rb") as f:
             start = f.read(20)
             if start.startswith(b"<") or start.startswith(b"<!"):
-                st.error(f"⚠️ File {os.path.basename(path)} looks like HTML, not pickle. Check Dropbox link.")
+                st.error(f"⚠️ File {os.path.basename(path)} is HTML, not pickle. Check Drive sharing or quota.")
                 st.stop()
 
     validate_pickle("movie_dict.pkl")
     validate_pickle("similarity.pkl")
 
-    # Load pickled data
+    # --------------------------
+    # Load pickle data
+    # --------------------------
     try:
         with open("movie_dict.pkl", "rb") as f:
             movies_dict = pickle.load(f)
         with open("similarity.pkl", "rb") as f:
             similarity = pickle.load(f)
     except Exception as e:
-        st.error("❌ Failed to load model files. Verify Dropbox links and file integrity.")
+        st.error("❌ Failed to load model files. Please verify your Google Drive file IDs or permissions.")
         st.exception(e)
         st.stop()
 
     movies = pd.DataFrame(movies_dict)
     return movies, similarity
-
 
 
 
