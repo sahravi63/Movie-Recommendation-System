@@ -246,29 +246,66 @@ AGE_RATING_MAP = {
 
 import requests, pickle, pandas as pd, os
 
+import requests, pickle, pandas as pd, os
+
 @st.cache_data
 def load_data():
-    # File IDs from Google Drive
-    MOVIE_DICT_ID = "1sr4EqcWE1_47fQvLplLJ0rY6oAdeZQ8m"   # replace with your movie_dict.pkl ID
-    SIMILARITY_ID = "1FORuqkvy18EJZ64IR1NgtUyYRy_Z_rGj"    # replace with your similarity.pkl ID
+    # Google Drive File IDs (make sure they are set to "Anyone with the link → Viewer")
+    MOVIE_DICT_ID = "1sr4EqcWE1_47fQvLplLJ0rY6oAdeZQ8m"   # movie_dict.pkl
+    SIMILARITY_ID = "1FORuqkvy18EJZ64IR1NgtUyYRy_Z_rGj"    # similarity.pkl
 
+    # --- Helper functions ---
     def download_from_gdrive(file_id, destination):
-        URL = f"https://drive.google.com/uc?export=download&id={file_id}"
-        response = requests.get(URL)
-        with open(destination, "wb") as f:
-            f.write(response.content)
+        """Download a file from Google Drive, handling virus scan/confirmation pages."""
+        URL = "https://drive.google.com/uc?export=download"
+        session = requests.Session()
 
-    # Local cache filenames
+        response = session.get(URL, params={'id': file_id}, stream=True)
+        token = get_confirm_token(response)
+
+        if token:
+            params = {'id': file_id, 'confirm': token}
+            response = session.get(URL, params=params, stream=True)
+
+        save_response_content(response, destination)
+
+    def get_confirm_token(response):
+        """Extract confirmation token for large files."""
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                return value
+        return None
+
+    def save_response_content(response, destination, chunk_size=32768):
+        """Write the response content to a local file in chunks."""
+        with open(destination, "wb") as f:
+            for chunk in response.iter_content(chunk_size):
+                if chunk:
+                    f.write(chunk)
+
+    # --- Check and download files if missing ---
     if not os.path.exists("movie_dict.pkl"):
+        st.info("📥 Downloading movie_dict.pkl from Google Drive...")
         download_from_gdrive(MOVIE_DICT_ID, "movie_dict.pkl")
+
     if not os.path.exists("similarity.pkl"):
+        st.info("📥 Downloading similarity.pkl from Google Drive...")
         download_from_gdrive(SIMILARITY_ID, "similarity.pkl")
 
-    movies_dict = pickle.load(open("movie_dict.pkl", "rb"))
-    similarity = pickle.load(open("similarity.pkl", "rb"))
-    movies = pd.DataFrame(movies_dict)
+    # --- Load pickled data safely ---
+    try:
+        with open("movie_dict.pkl", "rb") as f:
+            movies_dict = pickle.load(f)
+        with open("similarity.pkl", "rb") as f:
+            similarity = pickle.load(f)
+    except Exception as e:
+        st.error("❌ Failed to load model files. Please verify your Google Drive file IDs.")
+        st.exception(e)
+        st.stop()
 
+    movies = pd.DataFrame(movies_dict)
     return movies, similarity
+
 
 
 def clean_movie_data(movies):
