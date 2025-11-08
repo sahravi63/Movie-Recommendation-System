@@ -247,67 +247,55 @@ AGE_RATING_MAP = {
 import requests, pickle, pandas as pd, os
 
 
+import requests, pickle, pandas as pd, os
+
 @st.cache_data
 def load_data():
-    # ✅ File IDs (yours are correct)
-    MOVIE_DICT_ID = "1sr4EqcWE1_47fQvLplLJ0rY6oAdeZQ8m"
-    SIMILARITY_ID = "1FORuqkvy18EJZ64IR1NgtUyYRy_Z_rGj"
+    # ✅ Dropbox direct download links (use ?dl=1 for binary files)
+    MOVIE_DICT_URL = "https://www.dropbox.com/scl/fi/kgrn1642a53ci1two9zc3/movie_dict.pkl?rlkey=j50gdw3jnu8wuxv1y367ksbhw&st=ss2n49v5&dl=1"
+    SIMILARITY_URL = "https://www.dropbox.com/scl/fi/zhalvy3t6bgadt4ea1o3z/similarity.pkl?rlkey=z9fqkupnsygajab30wb1wqnrr&st=qc62cey2&dl=1"
 
     # --------------------------
-    # Helper: Download from Drive
+    # Helper: download from Dropbox
     # --------------------------
-    def download_from_gdrive(file_id, destination):
-        """Handles large Google Drive files (with confirmation token)."""
-        URL = "https://drive.google.com/uc?export=download"
-        session = requests.Session()
+    def download_from_url(url, destination):
+        """Download large binary file from Dropbox or other direct URL."""
+        response = requests.get(url, stream=True)
+        if response.status_code != 200:
+            st.error(f"❌ Failed to download {os.path.basename(destination)} (HTTP {response.status_code})")
+            st.stop()
 
-        response = session.get(URL, params={'id': file_id}, stream=True)
-        token = get_confirm_token(response)
-
-        if token:  # Large file confirmation page
-            params = {'id': file_id, 'confirm': token}
-            response = session.get(URL, params=params, stream=True)
-
-        save_response_content(response, destination)
-
-    def get_confirm_token(response):
-        for key, value in response.cookies.items():
-            if key.startswith('download_warning'):
-                return value
-        return None
-
-    def save_response_content(response, destination, chunk_size=32768):
         with open(destination, "wb") as f:
-            for chunk in response.iter_content(chunk_size):
+            for chunk in response.iter_content(8192):
                 if chunk:
                     f.write(chunk)
 
     # --------------------------
-    # Download and verify files
+    # Download if not cached
     # --------------------------
     if not os.path.exists("movie_dict.pkl"):
-        st.info("📥 Downloading movie_dict.pkl from Google Drive...")
-        download_from_gdrive(MOVIE_DICT_ID, "movie_dict.pkl")
+        st.info("📥 Downloading movie_dict.pkl from Dropbox...")
+        download_from_url(MOVIE_DICT_URL, "movie_dict.pkl")
 
     if not os.path.exists("similarity.pkl"):
-        st.info("📥 Downloading similarity.pkl from Google Drive...")
-        download_from_gdrive(SIMILARITY_ID, "similarity.pkl")
+        st.info("📥 Downloading similarity.pkl from Dropbox...")
+        download_from_url(SIMILARITY_URL, "similarity.pkl")
 
     # --------------------------
-    # Validate file content
+    # Validate file contents
     # --------------------------
     def validate_pickle(path):
         with open(path, "rb") as f:
             start = f.read(20)
             if start.startswith(b"<") or start.startswith(b"<!"):
-                st.error(f"⚠️ File {os.path.basename(path)} is HTML, not pickle. Check Drive sharing or quota.")
+                st.error(f"⚠️ File {os.path.basename(path)} looks like HTML, not a pickle. Check Dropbox link (must end with ?dl=1).")
                 st.stop()
 
     validate_pickle("movie_dict.pkl")
     validate_pickle("similarity.pkl")
 
     # --------------------------
-    # Load pickle data
+    # Load pickle data safely
     # --------------------------
     try:
         with open("movie_dict.pkl", "rb") as f:
@@ -315,7 +303,7 @@ def load_data():
         with open("similarity.pkl", "rb") as f:
             similarity = pickle.load(f)
     except Exception as e:
-        st.error("❌ Failed to load model files. Please verify your Google Drive file IDs or permissions.")
+        st.error("❌ Failed to load model files. Verify your Dropbox links and file integrity.")
         st.exception(e)
         st.stop()
 
