@@ -244,83 +244,31 @@ AGE_RATING_MAP = {
     "Adults (18+)": ["PG-13","R","NC-17"]
 }
 
-import requests, pickle, pandas as pd, os
-
+import pickle, pandas as pd, os
 
 @st.cache_data
 def load_data():
-    # ✅ File IDs (yours are correct)
-    MOVIE_DICT_ID = "1sr4EqcWE1_47fQvLplLJ0rY6oAdeZQ8m"
-    SIMILARITY_ID = "1FORuqkvy18EJZ64IR1NgtUyYRy_Z_rGj"
-
-    # --------------------------
-    # Helper: Download from Drive
-    # --------------------------
-    def download_from_gdrive(file_id, destination):
-        """Handles large Google Drive files (with confirmation token)."""
-        URL = "https://drive.google.com/uc?export=download"
-        session = requests.Session()
-
-        response = session.get(URL, params={'id': file_id}, stream=True)
-        token = get_confirm_token(response)
-
-        if token:  # Large file confirmation page
-            params = {'id': file_id, 'confirm': token}
-            response = session.get(URL, params=params, stream=True)
-
-        save_response_content(response, destination)
-
-    def get_confirm_token(response):
-        for key, value in response.cookies.items():
-            if key.startswith('download_warning'):
-                return value
-        return None
-
-    def save_response_content(response, destination, chunk_size=32768):
-        with open(destination, "wb") as f:
-            for chunk in response.iter_content(chunk_size):
-                if chunk:
-                    f.write(chunk)
-
-    # --------------------------
-    # Download and verify files
-    # --------------------------
-    if not os.path.exists("movie_dict.pkl"):
-        st.info("📥 Downloading movie_dict.pkl from Google Drive...")
-        download_from_gdrive(MOVIE_DICT_ID, "movie_dict.pkl")
-
-    if not os.path.exists("similarity.pkl"):
-        st.info("📥 Downloading similarity.pkl from Google Drive...")
-        download_from_gdrive(SIMILARITY_ID, "similarity.pkl")
-
-    # --------------------------
-    # Validate file content
-    # --------------------------
-    def validate_pickle(path):
-        with open(path, "rb") as f:
-            start = f.read(20)
-            if start.startswith(b"<") or start.startswith(b"<!"):
-                st.error(f"⚠️ File {os.path.basename(path)} is HTML, not pickle. Check Drive sharing or quota.")
-                st.stop()
-
-    validate_pickle("movie_dict.pkl")
-    validate_pickle("similarity.pkl")
-
-    # --------------------------
-    # Load pickle data
-    # --------------------------
+    """Load model files directly from local repository (GitHub-deployed)."""
     try:
+        # Load pickled data from local files
         with open("movie_dict.pkl", "rb") as f:
             movies_dict = pickle.load(f)
         with open("similarity.pkl", "rb") as f:
             similarity = pickle.load(f)
+
+        # Convert dictionary to DataFrame
+        movies = pd.DataFrame(movies_dict)
+        return movies, similarity
+
+    except FileNotFoundError as e:
+        st.error("❌ Model files not found in the app directory. Please ensure movie_dict.pkl and similarity.pkl exist in your repo.")
+        st.exception(e)
+        st.stop()
     except Exception as e:
-        st.error("❌ Failed to load model files. Please verify your Google Drive file IDs or permissions.")
+        st.error("❌ Failed to load model files. The files might be corrupted or incompatible.")
         st.exception(e)
         st.stop()
 
-    movies = pd.DataFrame(movies_dict)
-    return movies, similarity
 
 
 
